@@ -2,7 +2,7 @@
 pub mod app;
 pub mod storage;
 pub mod ui;
-pub mod db;
+// pub mod db;
 
 // Re-export main types for convenience
 pub use app::App;
