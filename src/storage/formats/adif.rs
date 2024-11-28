@@ -4,9 +4,25 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc, TimeZone};
 use regex::Regex;
 use lazy_static::lazy_static;
+use thiserror::Error;
 
 use crate::LogEntry;
 use crate::storage::{Storage, StorageError, StorageFormat};
+
+#[derive(Error, Debug)]
+pub enum AdifError {
+    #[error("ADIF file not found at {0}")]
+    FileNotFound(PathBuf),
+    
+    #[error("Invalid ADIF format: {0}")]
+    InvalidFormat(String),
+    
+    #[error("Missing required field: {0}")]
+    MissingField(String),
+    
+    #[error("Invalid date/time format: {0}")]
+    InvalidDateTime(String),
+}
 
 lazy_static! {
     static ref ADIF_FIELD_PATTERN: Regex = Regex::new(
@@ -22,9 +38,24 @@ pub struct AdifStorage {
 impl AdifStorage {
     pub fn new(path: &PathBuf) -> Result<Self, StorageError> {
         let cached_entries = if path.exists() {
-            let content = fs::read_to_string(path)?;
+            let content = fs::read_to_string(path).map_err(|e| {
+                StorageError::Io(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to read ADIF file: {}", e)))
+            })?;
             Self::adif_to_entries(&content)?
         } else {
+            // Create directory if it doesn't exist
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|e| {
+                    StorageError::Io(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to create directory: {}", e)))
+                })?;
+            }
+            
+            // Create empty ADIF file with header
+            let empty_adif = Self::create_empty_adif();
+            fs::write(path, &empty_adif).map_err(|e| {
+                StorageError::Io(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to create empty ADIF file: {}", e)))
+            })?;
+            
             Vec::new()
         };
 
@@ -34,7 +65,21 @@ impl AdifStorage {
         })
     }
 
-    /// Convert ADIF string to LogEntries
+    fn create_empty_adif() -> String {
+        format!(
+            "Amateur Radio Logbook\n\
+            <ADIF_VER:5>3.1.4\n\
+            <CREATED_TIMESTAMP:15>{}\n\
+            <PROGRAMID:{}>{}\n\
+            <PROGRAMVERSION:3>1.0\n\
+            <EOH>\n\n",
+            Utc::now().format("%Y%m%d %H%M%S"),
+            "HAM_LOGBOOK".len(),
+            "HAM_LOGBOOK"
+        )
+    }
+
+    /// Convert ADIF string to LogEntries with improved error handling
     pub fn adif_to_entries(content: &str) -> Result<Vec<LogEntry>, StorageError> {
         let mut entries = Vec::new();
         let mut current_fields = std::collections::HashMap::new();
@@ -50,10 +95,13 @@ impl AdifStorage {
             let field_name = cap[1].to_uppercase();
             let field_value = cap[3].to_string();
 
-            // Check for end of record
             if field_name == "EOR" {
-                if let Some(entry) = Self::build_entry_from_fields(&current_fields) {
-                    entries.push(entry);
+                match Self::build_entry_from_fields(&current_fields) {
+                    Some(entry) => entries.push(entry),
+                    None => {
+                        // Log warning but continue processing other entries
+                        eprintln!("Warning: Skipped invalid ADIF record due to missing required fields");
+                    }
                 }
                 current_fields.clear();
             } else {
@@ -163,14 +211,39 @@ impl AdifStorage {
     }
 
     fn save_to_file(&self) -> Result<(), StorageError> {
+        // Write to temporary file first
+        let temp_path = self.path.with_extension("adi.tmp");
         let adif = Self::entries_to_adif(&self.cached_entries);
-        fs::write(&self.path, adif)?;
+        
+        fs::write(&temp_path, &adif).map_err(|e| {
+            StorageError::Io(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to write temporary file: {}", e)))
+        })?;
+        
+        // Rename temporary file to actual file
+        fs::rename(&temp_path, &self.path).map_err(|e| {
+            StorageError::Io(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to save ADIF file: {}", e)))
+        })?;
+        
         Ok(())
+    }
+
+    pub fn backup(&self) -> Result<PathBuf, StorageError> {
+        let backup_path = self.path.with_extension(format!(
+            "adi.bak.{}", 
+            Utc::now().format("%Y%m%d_%H%M%S")
+        ));
+        
+        fs::copy(&self.path, &backup_path).map_err(|e| {
+            StorageError::Io(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to create backup: {}", e)))
+        })?;
+        
+        Ok(backup_path)
     }
 }
 
 #[async_trait]
 impl Storage for AdifStorage {
+    
     async fn save_entry(&mut self, entry: LogEntry) -> Result<(), StorageError> {
         if let Some(pos) = self.cached_entries.iter().position(|e| e.id == entry.id) {
             self.cached_entries[pos] = entry;
@@ -178,6 +251,10 @@ impl Storage for AdifStorage {
             self.cached_entries.push(entry);
         }
         self.save_to_file()?;
+        Ok(())
+    }
+
+    async fn add_entry(&mut self, entry: LogEntry) -> Result<(), StorageError> {
         Ok(())
     }
 
@@ -214,6 +291,7 @@ impl Storage for AdifStorage {
         self.save_to_file()?;
         Ok(())
     }
+
 
     fn format(&self) -> StorageFormat {
         StorageFormat::Adif

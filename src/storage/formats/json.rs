@@ -72,6 +72,10 @@ impl Storage for JsonStorage {
             .cloned())
     }
 
+    async fn add_entry(&mut self, entry: LogEntry) -> Result<(), StorageError> {
+        Ok(())
+    }
+
     async fn list_entries(&self) -> Result<Vec<LogEntry>, StorageError> {
         Ok(self.cached_entries.clone())
     }

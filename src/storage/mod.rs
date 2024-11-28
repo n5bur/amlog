@@ -13,6 +13,6 @@ pub use types::{Storage, StorageFormat};
 // Re-export concrete implementations
 pub use formats::json::JsonStorage;
 pub use formats::adif::AdifStorage;
-
+pub use formats::sqlite::SqliteStorage;
 // Constants
 pub(crate) const DEFAULT_BUFFER_SIZE: usize = 1024;

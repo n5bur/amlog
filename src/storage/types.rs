@@ -7,6 +7,7 @@ use super::StorageError;
 pub enum StorageFormat {
     Json,
     Adif,
+    Sqlite,
 }
 
 #[async_trait]
@@ -25,6 +26,10 @@ pub trait Storage: Send + Sync {
 
     /// Delete an entry
     async fn delete_entry(&mut self, id: &str) -> Result<(), StorageError>;
+
+    /// Add an entry to the undo buffer
+    /// This is used to store deleted entries for potential undo
+    async fn add_entry(&mut self, entry: LogEntry) -> Result<(), StorageError>;
 
     /// Clear all entries
     async fn clear(&mut self) -> Result<(), StorageError>;

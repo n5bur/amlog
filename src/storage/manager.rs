@@ -1,11 +1,12 @@
 use std::path::PathBuf;
+use sqlx::Sqlite;
 use tokio::sync::Mutex;
 use std::sync::Arc;
 
 use super::{
     Storage, StorageError, StorageFormat,
 };
-use crate::storage::{JsonStorage, AdifStorage};
+use crate::storage::{JsonStorage, AdifStorage, SqliteStorage};
 
 
 use crate::LogEntry;
@@ -17,10 +18,11 @@ pub struct StorageManager {
 }
 
 impl StorageManager {
-    pub fn new(format: StorageFormat, path: PathBuf) -> Result<Self, StorageError> {
+    pub async fn new(format: StorageFormat, path: PathBuf) -> Result<Self, StorageError> {
         let storage: Box<dyn Storage> = match format {
             StorageFormat::Json => Box::new(JsonStorage::new(&path)?),
             StorageFormat::Adif => Box::new(AdifStorage::new(&path)?),
+            StorageFormat::Sqlite => Box::new(SqliteStorage::new(&path).await?),
         };
 
         Ok(Self {
@@ -40,6 +42,15 @@ impl StorageManager {
         storage.list_entries().await
     }
 
+    pub async fn delete_entry(&mut self, id: &str) -> Result<(), StorageError> {
+        let mut storage = self.storage.lock().await;
+        storage.delete_entry(id).await
+    }
+
+    pub async fn add_entry(&mut self, entry: LogEntry) -> Result<(), StorageError> {
+        let mut storage = self.storage.lock().await;
+        storage.add_entry(entry).await
+    }
     pub async fn export_adif(&self) -> Result<String, StorageError> {
         let entries = self.list_entries().await?;
         
@@ -63,8 +74,8 @@ impl StorageManager {
         let entries = AdifStorage::adif_to_entries(content);
 
         let mut storage = self.storage.lock().await;
-        for entry in entries {
-            for log_entry in entry {
+        if let Ok(entries) = entries {
+            for log_entry in entries {
                 storage.save_entry(log_entry).await?;
             }
         }

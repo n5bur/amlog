@@ -1,9 +1,9 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style},
+    style::{Color, Style, Modifier},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem},
+    widgets::{Block, Borders, List, ListItem, ListState},
 };
 use crate::app::App;
 
@@ -24,12 +24,21 @@ pub fn draw_log_list(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
+    let mut list_state = ListState::default();
+    list_state.select(app.selected_index());
+
     let list = List::new(items)
         .block(Block::default()
             .borders(Borders::ALL)
-            .title("Log Entries (n: New, e: Edit, i: Import, x: Export)"))
-        .highlight_style(Style::default().fg(Color::Yellow))
-        .highlight_symbol(">> ");
+            .title("Log Entries (↑/↓: Select, e: Edit, n: New, i: Import, x: Export)"))
+        .highlight_style(
+            Style::default()
+                .bg(Color::Yellow)  // Changed to background color
+                .fg(Color::Black)   // Black text on yellow background
+                .add_modifier(Modifier::BOLD)
+        )
+        .highlight_symbol("➤ ");    // Changed to a clearer symbol
 
-    f.render_widget(list, area);
+    // Use the stateful rendering
+    f.render_stateful_widget(list, area, &mut list_state);
 }

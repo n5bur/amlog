@@ -1,15 +1,13 @@
-use std::io;
-use std::time::Duration;
-
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
+use std::{io, time::Duration};
 
-use amlog::app::{App, AppMode};
-use amlog::ui;
+// Import the required types from our lib
+use amlog::{App, AppMode, ui};
 
 fn main() -> Result<(), io::Error> {
     // Setup terminal
@@ -22,12 +20,9 @@ fn main() -> Result<(), io::Error> {
     // Create app state
     let mut app = App::new().expect("Failed to create app");
 
-    // Main event loop
     loop {
-        // Draw UI
         terminal.draw(|f| ui::draw(f, &app))?;
 
-        // Handle input
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 match app.mode {
@@ -35,25 +30,36 @@ fn main() -> Result<(), io::Error> {
                         match key.code {
                             KeyCode::Char('q') => break,
                             KeyCode::Char('n') => app.enter_new_mode(),
-                            KeyCode::Char('e') => app.enter_edit_mode(),
+                            KeyCode::Char('e') => app.edit_selected_entry(),
                             KeyCode::Up => app.select_previous(),
                             KeyCode::Down => app.select_next(),
+                            KeyCode::Char('j') => app.select_next(),
+                            KeyCode::Char('k') => app.select_previous(),
                             KeyCode::Char('i') => {
-                                // TODO: Add ADIF import handling
                                 app.set_status("Import feature coming soon");
-                            }
+                            },
                             KeyCode::Char('x') => {
-                                // TODO: Add ADIF export handling
                                 app.set_status("Export feature coming soon");
-                            }
+                            },
+                            KeyCode::Char('d') => {
+                                app.delete_current_entry();
+                            },
+                            KeyCode::Char('u') => {
+                                app.undo_delete();
+                            },
                             _ => {}
                         }
-                    }
+                    },
                     AppMode::NewEntry | AppMode::Edit => {
                         match key.code {
                             KeyCode::Esc => app.enter_normal_mode(),
-                            KeyCode::Tab => app.next_field(),
-                            KeyCode::BackTab => app.previous_field(),
+                            KeyCode::Tab => {
+                                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                                    app.previous_field();
+                                } else {
+                                    app.next_field();
+                                }
+                            },
                             KeyCode::Enter => {
                                 if app.form.is_valid() {
                                     app.save_entry();
@@ -61,7 +67,7 @@ fn main() -> Result<(), io::Error> {
                                 } else {
                                     app.set_error("Please fill in all required fields");
                                 }
-                            }
+                            },
                             KeyCode::Char(c) => app.handle_input(c),
                             KeyCode::Backspace => app.handle_backspace(),
                             _ => {}
@@ -72,7 +78,7 @@ fn main() -> Result<(), io::Error> {
         }
     }
 
-    // Cleanup and restore terminal
+    // Cleanup terminal
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),

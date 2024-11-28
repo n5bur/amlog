@@ -19,6 +19,13 @@ pub struct LogEntry {
     pub rst_sent: Option<String>,
     pub rst_received: Option<String>,
     pub notes: Option<String>,
+    pub name: Option<String>,
+    pub qth: Option<String>,
+    pub state: Option<String>,
+    pub country: Option<String>,
+    pub dxcc: Option<u32>,
+    pub band: Option<String>,
+
     
     // Optional fields
     #[serde(default)]
@@ -31,4 +38,11 @@ pub struct LogEntry {
     // Extensible fields for plugins
     #[serde(default)]
     pub custom_fields: HashMap<String, String>,
+}
+
+#[derive(Clone)]
+pub struct DeletedEntry {
+    pub entry: LogEntry,
+    pub index: usize,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
 }
